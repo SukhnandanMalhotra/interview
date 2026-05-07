@@ -68,16 +68,24 @@ private[interpreters] class CircuitBreaker[F[_]: Concurrent: Clock](
           .as(right)
       case left @ Left(_) =>
         stateRef
-          .updateAndGet {
-            case HalfOpen                          => Open(now)
-            case Closed(n) if n + 1 >= maxFailures => Open(now)
-            case Closed(n)                         => Closed(n + 1)
-            case s @ Open(_)                       => s
+          .modify { s =>
+            val next = s match {
+              case HalfOpen                          => Open(now)
+              case Closed(n) if n + 1 >= maxFailures => Open(now)
+              case Closed(n)                         => Closed(n + 1)
+              case o @ Open(_)                       => o
+            }
+            (next, (s, next))
           }
           .flatMap {
-            case Open(_)   => Sync[F].delay(log.warn("Circuit breaker opened — upstream failure threshold reached"))
-            case Closed(n) => Sync[F].delay(log.warn(s"Upstream failure recorded (consecutive failures: $n)"))
-            case HalfOpen  => Concurrent[F].unit
+            case (HalfOpen, Open(_)) =>
+              Sync[F].delay(log.warn("Circuit breaker re-opened — probe request failed"))
+            case (_, Open(_)) =>
+              Sync[F].delay(log.warn("Circuit breaker opened — upstream failure threshold reached"))
+            case (_, Closed(n)) =>
+              Sync[F].delay(log.warn(s"Upstream failure recorded (consecutive failures: $n)"))
+            case _ =>
+              Concurrent[F].unit
           }
           .as(left)
     }
