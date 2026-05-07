@@ -15,6 +15,8 @@ object Currency {
   case object SGD extends Currency
   case object USD extends Currency
 
+  val values: List[Currency] = List(AUD, CAD, CHF, EUR, GBP, NZD, JPY, SGD, USD)
+
   implicit val show: Show[Currency] = Show.show {
     case AUD => "AUD"
     case CAD => "CAD"
@@ -27,16 +29,17 @@ object Currency {
     case USD => "USD"
   }
 
-  def fromString(s: String): Currency = s.toUpperCase match {
-    case "AUD" => AUD
-    case "CAD" => CAD
-    case "CHF" => CHF
-    case "EUR" => EUR
-    case "GBP" => GBP
-    case "NZD" => NZD
-    case "JPY" => JPY
-    case "SGD" => SGD
-    case "USD" => USD
+  def fromString(s: String): Either[String, Currency] = s.toUpperCase match {
+    case "AUD" => Right(AUD)
+    case "CAD" => Right(CAD)
+    case "CHF" => Right(CHF)
+    case "EUR" => Right(EUR)
+    case "GBP" => Right(GBP)
+    case "NZD" => Right(NZD)
+    case "JPY" => Right(JPY)
+    case "SGD" => Right(SGD)
+    case "USD" => Right(USD)
+    case other => Left(s"Unsupported currency: $other")
   }
 
 }
