@@ -50,19 +50,14 @@ class CachingInterpreter[F[_]: Concurrent: Clock: Timer](
                }
     } yield result
 
-  // Atomically: if a refresh is already in-flight, wait on its Deferred (all waiters
-  // unblock together when it completes). Otherwise install a fresh Deferred and run
-  // the refresh ourselves.
-  //
-  // Fast path: if a refresh is already running, we wait without allocating a Deferred.
-  // Only the potential "winner" allocates, and in a race only one allocation is wasted.
+  // one fiber does the fetch; others wait on the same Deferred
   private def getOrStartRefresh: F[Either[Error, CacheEntry]] =
     inFlightRef.get.flatMap {
       case Some(existing) =>
-        // A refresh is already running — wait for it without allocating a new Deferred
+        // already running, wait
         existing.get
       case None =>
-        // We might be first — allocate and attempt to install atomically
+        // might be first — try to install
         Deferred[F, Either[Error, CacheEntry]].flatMap { fresh =>
           inFlightRef.modify {
             case Some(existing) => (Some(existing), existing.get) // lost the race, wait
@@ -71,16 +66,12 @@ class CachingInterpreter[F[_]: Concurrent: Clock: Timer](
         }
     }
 
-  // Runs the fetch, completes the Deferred so all waiters unblock simultaneously,
-  // then clears inFlightRef so subsequent stale-cache requests start a new cycle.
   private def doRefresh(deferred: Deferred[F, Either[Error, CacheEntry]]): F[Either[Error, CacheEntry]] = {
     val fetch: F[Either[Error, CacheEntry]] =
       circuitBreaker
         .protect(retryN(3, 100L)(fetcher.fetchAll()))
         .flatMap {
           case Right(ratesMap) =>
-            // Re-read the clock now that the fetch is complete — avoids recording a
-            // stale timestamp if retries or CB overhead delayed us significantly.
             Clock[F].realTime(TimeUnit.MILLISECONDS).flatMap { fetchedAt =>
               val entry = CacheEntry(ratesMap, fetchedAt)
               cacheRef.set(Some(entry)).as(Right(entry): Either[Error, CacheEntry])
@@ -106,10 +97,7 @@ class CachingInterpreter[F[_]: Concurrent: Clock: Timer](
         logEffect *> deferred.complete(result)
       }
     )(
-      // Always clear the in-flight slot. Also complete the Deferred with a failure
-      // in case the fiber was cancelled before flatTap ran — otherwise waiters on
-      // deferred.get would hang forever. The attempt.void swallows the
-      // "already completed" error if the main action did complete normally.
+      // clear slot and unblock any waiters on cancellation
       inFlightRef.set(None) *>
         deferred.complete(Left(Error.RateServiceUnavailable)).attempt.void
     )

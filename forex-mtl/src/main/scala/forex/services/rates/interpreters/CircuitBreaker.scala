@@ -15,9 +15,7 @@ private[interpreters] object CBState {
   final case class Open(openedAt: Long) extends CBState
 }
 
-// Tracks upstream health. After maxFailures consecutive failures the circuit opens
-// and all requests fail fast. After resetTimeoutMs one probe is allowed through
-// (HalfOpen). Probe success → Closed(0). Probe failure → Open(now) with fresh timer.
+// open after maxFailures consecutive failures; half-open probe after resetTimeoutMs
 private[interpreters] class CircuitBreaker[F[_]: Concurrent: Clock](
     maxFailures: Int,
     resetTimeoutMs: Long,
@@ -35,7 +33,6 @@ private[interpreters] class CircuitBreaker[F[_]: Concurrent: Clock](
                else Concurrent[F].pure(Left(Error.RateServiceUnavailable))
     } yield result
 
-  // Atomically decides whether to allow the request and transitions state.
   private def decide(now: Long)(state: CBState): (CBState, Boolean) = state match {
     case Open(openedAt) if now - openedAt >= resetTimeoutMs => (HalfOpen, true) // allow one probe
     case Open(_)                                            => (state, false) // still within timeout
@@ -46,8 +43,7 @@ private[interpreters] class CircuitBreaker[F[_]: Concurrent: Clock](
   private def run[A](action: F[Either[Error, A]], now: Long): F[Either[Error, A]] =
     action.flatMap {
       case right @ Right(_) =>
-        // Single atomic modify: capture old state and compute new state together,
-        // eliminating the TOCTOU between get + updateAndGet.
+        // need prev and next state together — modify gives us both atomically
         stateRef
           .modify { s =>
             val next = s match {

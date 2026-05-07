@@ -69,7 +69,7 @@ class OneFrameClient[F[_]: Sync: Clock](config: OneFrameConfig, httpClient: Clie
         }
       }
       .handleErrorWith { e =>
-        // Log the full internal error for debugging; never expose host/port details to callers.
+        // don't surface internal details to callers
         Sync[F]
           .delay(log.error(s"One-Frame HTTP call failed: ${Option(e.getMessage).getOrElse(e.toString)}"))
           .as(Left(Error.RateServiceUnavailable))
