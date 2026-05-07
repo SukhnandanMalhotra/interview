@@ -6,10 +6,13 @@ object errors {
 
   sealed trait Error extends Exception
   object Error {
-    final case class RateLookupFailed(msg: String) extends Error
+    case object RateServiceUnavailable extends Error {
+      override def getMessage: String = "Exchange rate service is temporarily unavailable"
+    }
   }
 
   def toProgramError(error: RatesServiceError): Error = error match {
-    case RatesServiceError.OneFrameLookupFailed(msg) => Error.RateLookupFailed(msg)
+    case RatesServiceError.RateServiceUnavailable    => Error.RateServiceUnavailable
+    case RatesServiceError.OneFrameLookupFailed(_)   => Error.RateServiceUnavailable
   }
 }
