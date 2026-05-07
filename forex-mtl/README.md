@@ -104,9 +104,9 @@ app {
 |---|---|---|
 | Valid pair | 200 | JSON rate object |
 | Invalid currency code | 400 | `Unsupported currency: XYZ` |
-| Same currency (`from == to`) | 400 | `from and to must be different currencies` |
-| Missing `from` param | 400 | `Missing required query parameter: from` |
-| Missing `to` param | 400 | `Missing required query parameter: to` |
+| Same currency (`from == to`) | 400 | `Cannot convert a currency to itself` |
+| Missing `from` param | 400 | `Query parameter 'from' is required` |
+| Missing `to` param | 400 | `Query parameter 'to' is required` |
 | One-Frame unavailable / CB open | 503 | `Exchange rate service is temporarily unavailable. Please try again shortly.` |
 
 ## Design Decisions
@@ -124,3 +124,4 @@ app {
 - The 5-minute TTL is measured from the time the fetch completed, not from the `time_stamp` field in the One-Frame response (see Q6 in INTERVIEW_NOTES.md for rationale).
 - Same-currency pairs (`USD→USD`) are not valid requests and return a 400.
 - This service is designed for a single instance. Horizontal scaling requires a shared distributed cache (e.g. Redis) and a distributed lock to prevent multiple instances from exhausting the quota simultaneously.
+- **Known limitation:** If One-Frame returns a partial response (fewer than 72 pairs), the incomplete set is cached for the full TTL. Requests for missing pairs will receive a 503 until the cache expires. Validating response completeness was intentionally avoided — it would couple the code to a specific currency count and require a patch whenever One-Frame adds new pairs.

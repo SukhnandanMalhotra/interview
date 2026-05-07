@@ -10,6 +10,7 @@ import org.http4s.blaze.client.BlazeClientBuilder
 import org.http4s.implicits._
 import org.http4s.server.middleware.{ AutoSlash, Timeout }
 import scala.concurrent.ExecutionContext
+import scala.concurrent.duration._
 
 class Module[F[_]: ConcurrentEffect: Timer](config: ApplicationConfig, ratesService: RatesService[F]) {
 
@@ -38,7 +39,7 @@ class Module[F[_]: ConcurrentEffect: Timer](config: ApplicationConfig, ratesServ
 
 object Module {
   def resource[F[_]: ConcurrentEffect: Timer: Clock](config: ApplicationConfig): Resource[F, Module[F]] =
-    BlazeClientBuilder[F](ExecutionContext.global).resource.flatMap { client =>
+    BlazeClientBuilder[F](ExecutionContext.global).withRequestTimeout(10.seconds).resource.flatMap { client =>
       Resource.eval(RatesServices.cached[F](config.oneFrame, client)).map { ratesService =>
         new Module[F](config, ratesService)
       }
